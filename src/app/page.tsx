@@ -8,9 +8,8 @@ function proxyUrl(articleLink: string, section: string): string {
   return `/article?url=${encodeURIComponent(encoded)}&ref=${section}`;
 }
 
-// Rough gzipped HTML estimate per article item: ~300 bytes
 function estimatePageKB(count: number): string {
-  const bytes = 3200 + count * 310; // base shell + per-item
+  const bytes = 3200 + count * 310;
   return (bytes / 1024).toFixed(1);
 }
 
@@ -40,18 +39,16 @@ export default async function HomePage({ searchParams }: PageProps) {
               {label}
             </Link>
           ))}
+          <Link href="/audio" style={{ color: "var(--accent)" }}>🎙 صوتی</Link>
         </nav>
       </header>
 
-      {/* ── Bandwidth bar ─────────────────────────────── */}
       <div className="status-bar">
         <span>بروزرسانی: {now} | {articles.length} خبر</span>
         <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
           <span style={{ fontSize: "0.68rem", color: "var(--muted)" }}>مصرف این صفحه:</span>
           <span className="bandwidth-badge">≈ {pageKB} KB</span>
-          <span style={{ fontSize: "0.65rem", color: "var(--muted)" }}>
-            در مقابل {">"}4,000 KB رادیو فردا
-          </span>
+          <span style={{ fontSize: "0.65rem", color: "var(--muted)" }}>{">"}4,000 KB رادیو فردا</span>
         </div>
       </div>
 
@@ -65,7 +62,19 @@ export default async function HomePage({ searchParams }: PageProps) {
           {articles.map((article: Article, i: number) => (
             <li key={i} className="article-item">
               <h2 className="article-title">
-                <Link href={proxyUrl(article.link, section)}>{article.title}</Link>
+                {/* Audio articles link to article page which embeds the player */}
+                <Link href={proxyUrl(article.link, section)}>
+                  {article.hasAudio && (
+                    <span style={{
+                      display: "inline-block", marginLeft: "6px",
+                      fontSize: "0.65rem", background: "#1a2a0a",
+                      color: "#6aaa30", border: "1px solid #3a5a1a",
+                      borderRadius: "3px", padding: "1px 5px",
+                      verticalAlign: "middle", lineHeight: "1.6",
+                    }}>🎙 صوتی</span>
+                  )}
+                  {article.title}
+                </Link>
               </h2>
               <div className="article-meta">
                 {article.pubDate && <span>{formatDate(article.pubDate)}</span>}
