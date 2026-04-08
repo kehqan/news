@@ -1,5 +1,4 @@
 // lib/feed.ts — Server-side only. Zero client JS.
-// All feed URLs verified working 2026-04-08.
 
 export interface Article {
   title: string;
@@ -8,19 +7,29 @@ export interface Article {
   description: string;
   category: string;
   imageUrl: string;
+  hasAudio: boolean;   // ← NEW: flagged from title pattern
 }
 
-// Real, verified Radio Farda RSS feed URLs
 export const FEEDS: Record<string, { url: string; label: string }> = {
   latest:   { url: "https://www.radiofarda.com/api/",                       label: "آخرین اخبار" },
   iran:     { url: "https://www.radiofarda.com/api/zpoqil-vomx-tpe_kip",    label: "ایران" },
   world:    { url: "https://www.radiofarda.com/api/zmoqpl-vomx-tpeykim",    label: "جهان" },
   economy:  { url: "https://www.radiofarda.com/api/zrqpml-vomx-tpeou_p",   label: "اقتصاد" },
-  culture:  { url: "https://www.radiofarda.com/api/zpvmmol-vomx-tpe_qvmp", label: "فرهنگ و زندگی" },
+  culture:  { url: "https://www.radiofarda.com/api/zpvmmol-vomx-tpe_qvmp", label: "فرهنگ" },
   politics: { url: "https://www.radiofarda.com/api/z-oqml-vomx-tpergim",   label: "سیاسی" },
   social:   { url: "https://www.radiofarda.com/api/zboq_l-vomx-tpeqgi_",   label: "اجتماعی" },
   analysis: { url: "https://www.radiofarda.com/api/zptimql-vomx-tpe_o_mi", label: "تحلیل" },
 };
+
+const AUDIO_PATTERNS = [
+  "سرخط خبرها", "ساعت ۱", "ساعت ۲", "ساعت ۶", "ساعت ۷",
+  "ساعت ۸", "ساعت ۹", "پوشش ویژه", "پادکست", "لایه هفتم",
+  "رادیو فردا", "برنامه رادیویی",
+];
+
+function hasAudioTitle(title: string): boolean {
+  return AUDIO_PATTERNS.some((p) => title.includes(p));
+}
 
 function decodeHtml(s: string): string {
   return s
@@ -37,48 +46,34 @@ function clean(s: string): string {
 function parseXml(xml: string): Article[] {
   const items: Article[] = [];
   const matches = xml.matchAll(/<item>([\s\S]*?)<\/item>/g);
-
   for (const m of matches) {
     const item = m[1];
-
     const title = clean(
       (item.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/) ||
        item.match(/<title>([\s\S]*?)<\/title>/) || [])[1] || ""
     );
-
     const link = (
       (item.match(/<link>([\s\S]*?)<\/link>/) ||
        item.match(/<guid[^>]*>([\s\S]*?)<\/guid>/) || [])[1] || ""
     ).trim();
-
     const pubDate = ((item.match(/<pubDate>([\s\S]*?)<\/pubDate>/) || [])[1] || "").trim();
-
     const description = clean(
       (item.match(/<description><!\[CDATA\[([\s\S]*?)\]\]><\/description>/) ||
        item.match(/<description>([\s\S]*?)<\/description>/) || [])[1] || ""
     ).slice(0, 320);
-
-    // Collect all categories
     const cats = [...item.matchAll(/<category><!\[CDATA\[([\s\S]*?)\]\]><\/category>/g)]
-      .map(c => clean(c[1]))
-      .filter(c => c && c !== "بایگانی")
-      .slice(0, 2);
+      .map(c => clean(c[1])).filter(c => c && c !== "بایگانی").slice(0, 2);
     const category = cats.join(" · ");
-
-    // Thumbnail from <enclosure>
     const imageUrl = ((item.match(/<enclosure[^>]+url="([^"]+)"/) || [])[1] || "").trim();
-
     if (title && link) {
-      items.push({ title, link, pubDate, description, category, imageUrl });
+      items.push({ title, link, pubDate, description, category, imageUrl, hasAudio: hasAudioTitle(title) });
     }
   }
-
   return items;
 }
 
 export async function fetchFeed(section = "latest"): Promise<Article[]> {
   const feed = FEEDS[section] || FEEDS.latest;
-
   try {
     const res = await fetch(feed.url, {
       next: { revalidate: 300 },
@@ -88,10 +83,8 @@ export async function fetchFeed(section = "latest"): Promise<Article[]> {
         "Accept-Language": "fa,en;q=0.9",
       },
     });
-
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const xml = await res.text();
-    return parseXml(xml);
+    return parseXml(await res.text());
   } catch (e) {
     console.error(`Feed error [${section}]:`, e);
     return [];
@@ -105,7 +98,5 @@ export function formatDate(dateStr: string): string {
       year: "numeric", month: "long", day: "numeric",
       hour: "2-digit", minute: "2-digit",
     });
-  } catch {
-    return dateStr;
-  }
+  } catch { return dateStr; }
 }
