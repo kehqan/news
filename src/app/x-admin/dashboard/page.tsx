@@ -205,6 +205,10 @@ export default async function AdminDashboard() {
               <div className="link-card-label">منبع داده</div>
               RadioFarda RSS ↗
             </a>
+            <a href="/x-admin/ticker" className="link-card" style={{ borderColor: "var(--accent)" }}>
+              <div className="link-card-label">مدیریت نوار خبری</div>
+              🔴 خط خبری →
+            </a>
           </div>
 
           {/* ── Env reminder ── */}
