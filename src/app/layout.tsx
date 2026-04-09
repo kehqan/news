@@ -1,26 +1,37 @@
 // src/app/layout.tsx
 import type { Metadata } from "next";
+import { readTicker } from "@/lib/ticker";
 
 export const metadata: Metadata = {
   title: "فردا | اخبار",
   description: "نسخه سبک رادیو فردا — بدون تصویر، بدون ویدیو",
   viewport: "width=device-width, initial-scale=1",
-  // No og:image to keep weight down
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Fetch ticker server-side — no client JS needed
+  const ticker = await readTicker().catch(() => null);
+  const activeItems = ticker?.items.filter((i) => i.active) ?? [];
+  const sep = ticker?.separator ?? "🔴";
+  const speed = ticker?.speed ?? "normal";
+
+  // CSS animation duration: slow=45s, normal=25s, fast=12s
+  const dur = speed === "slow" ? "45s" : speed === "fast" ? "12s" : "25s";
+
+  // Build the scrolling text — duplicate for seamless loop
+  const tickerText = activeItems
+    .map((item) => `${item.text}`)
+    .join(`  ${sep}  `);
+
   return (
     <html lang="fa" dir="rtl">
       <head>
-        {/* ZERO external font requests — system Persian fonts only */}
         <meta charSet="utf-8" />
         <meta name="theme-color" content="#0a0a0a" />
         <style dangerouslySetInnerHTML={{ __html: `
           /* ── Reset ─────────────────────────────────── */
           *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-          
-          /* ── System font stack for Persian ─────────── */
-          /* Uses whatever Persian font the device has — zero download */
+
           :root {
             --bg: #0d0d0d;
             --surface: #161616;
@@ -35,7 +46,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }
 
           html {
-            font-family: 
+            font-family:
               "Vazirmatn", "Vazir", "IranSans", "B Nazanin",
               "Tahoma", "Arial Unicode MS",
               system-ui, sans-serif;
@@ -52,16 +63,76 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             padding: 0 16px;
           }
 
-          /* ── Typography ─────────────────────────────── */
-          h1 { font-size: 1.4rem; font-weight: 700; line-height: 1.4; }
-          h2 { font-size: 1.1rem; font-weight: 600; line-height: 1.5; }
-          p  { font-size: 0.95rem; line-height: 1.8; }
-
-          a {
-            color: var(--link);
-            text-decoration: none;
+          /* ── News ticker ─────────────────────────────── */
+          .ticker-bar {
+            background: var(--accent);
+            color: #0d0d0d;
+            height: 32px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            position: relative;
+            margin: 0 -16px;             /* bleed past body padding */
+            padding: 0;
           }
-          a:hover { text-decoration: underline; }
+
+          .ticker-label {
+            background: #0d0d0d;
+            color: var(--accent);
+            font-size: 0.65rem;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            padding: 0 10px;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            flex-shrink: 0;
+            z-index: 2;
+            white-space: nowrap;
+            border-left: 2px solid var(--accent);
+          }
+
+          .ticker-track-wrap {
+            flex: 1;
+            overflow: hidden;
+            height: 100%;
+            display: flex;
+            align-items: center;
+          }
+
+          /* The track holds the text twice for seamless loop.
+             Pure CSS keyframe — zero JavaScript. */
+          .ticker-track {
+            display: flex;
+            align-items: center;
+            white-space: nowrap;
+            animation: ticker-rtl ${dur} linear infinite;
+            will-change: transform;
+          }
+
+          /* RTL crawl: text moves right-to-left (enters from left, exits to right) */
+          @keyframes ticker-rtl {
+            0%   { transform: translateX(-50%); }
+            100% { transform: translateX(0%); }
+          }
+
+          .ticker-item {
+            font-size: 0.78rem;
+            font-weight: 700;
+            padding: 0 14px;
+            color: #0d0d0d;
+          }
+
+          .ticker-sep {
+            font-size: 0.72rem;
+            opacity: 0.65;
+            flex-shrink: 0;
+          }
+
+          /* Pause on hover — accessibility + readability */
+          .ticker-bar:hover .ticker-track {
+            animation-play-state: paused;
+          }
 
           /* ── Header ─────────────────────────────────── */
           .site-header {
@@ -133,7 +204,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }
           .article-item:last-child { border-bottom: none; }
 
-          .article-title a {
+          .article-title a, .article-title a:visited {
             font-size: 1rem;
             font-weight: 600;
             color: var(--text);
@@ -167,7 +238,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             line-height: 1.6;
           }
 
-          /* ── External link badge ─────────────────────── */
           .ext-badge {
             display: inline-block;
             font-size: 0.68rem;
@@ -282,10 +352,50 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             border-radius: 3px;
           }
           .search-link:hover { color: var(--text); text-decoration: none; border-color: var(--muted); }
-
         `}} />
       </head>
       <body>
+        {/* ── News ticker bar — rendered server-side, pure CSS animation ── */}
+        {activeItems.length > 0 && (
+          <div className="ticker-bar" role="marquee" aria-label="خط خبری">
+            <div className="ticker-label">فوری</div>
+            <div className="ticker-track-wrap">
+              {/*
+                Two identical spans inside the track.
+                The track animates from -50% to 0%, which moves one full copy
+                of the content. When it reaches 0%, it snaps back to -50% seamlessly.
+              */}
+              <div className="ticker-track">
+                {/* Copy A */}
+                <span className="ticker-item">
+                  {activeItems.map((item, i) => (
+                    <span key={`a-${i}`}>
+                      {i > 0 && <span className="ticker-sep">&nbsp;{sep}&nbsp;</span>}
+                      {item.sourceUrl
+                        ? <a href={item.sourceUrl} style={{ color: "#0d0d0d", textDecoration: "none" }}>{item.text}</a>
+                        : <>{item.text}</>
+                      }
+                    </span>
+                  ))}
+                </span>
+                {/* Gap between copies */}
+                <span className="ticker-sep" style={{ padding: "0 20px" }}>{sep}</span>
+                {/* Copy B — for seamless loop */}
+                <span className="ticker-item">
+                  {activeItems.map((item, i) => (
+                    <span key={`b-${i}`}>
+                      {i > 0 && <span className="ticker-sep">&nbsp;{sep}&nbsp;</span>}
+                      {item.sourceUrl
+                        ? <a href={item.sourceUrl} style={{ color: "#0d0d0d", textDecoration: "none" }}>{item.text}</a>
+                        : <>{item.text}</>
+                      }
+                    </span>
+                  ))}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
         {children}
       </body>
     </html>
